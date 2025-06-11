@@ -1,0 +1,16 @@
+Application contains **typesafe** configuration *application.conf* in HOCON format
+
+*SaymonApp* - main entry point. Applies configuration and run the application.
+
+For unit-testing **JUnit** is used.
+
+For integration testing **Kafka** is used. To run **Kafka** *docker-compose.yml* can be used. It contains the **Kafka**
+itself and **kafka-ui** for convenient WEB UI to look up meta-information in the cluster including the messages in topics.
+
+*SendMsgs* - for tests purposes. Generates SourceMessages into SOURCE topic.
+
+### PS
+For better pipeline's performance the filtering may be placed in first like pushdown predicate.
+
+Sink, SinkMessage should be placed in separate lib for synchronize between different services.
+
