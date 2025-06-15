@@ -15,13 +15,9 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
+import java.util.concurrent.*;
 import java.util.stream.StreamSupport;
 
 /**
@@ -30,14 +26,17 @@ import java.util.stream.StreamSupport;
  */
 @Slf4j
 public class SaymonApp {
-    private static final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private static final ScheduledExecutorService executor = Executors.newScheduledThreadPool(2);
     private static String outputTopic = "OUTPUT_TOPIC";
 
     public static void main(String[] args) {
         Config config = ConfigFactory.load();
         Config pipelineConfig = config.getObject("application.pipeline").toConfig();
 
+        SourceMessageCache cache = new SourceMessageCache(pipelineConfig.getLong("cacheMessageDelaySeconds"));
+
         SaymonService service = SaymonService.builder()
+                .cache(cache)
                 .deduplicator(new WindowDedup(
                         pipelineConfig.getLong("deduplication.windowMs"),
                         Set.copyOf(pipelineConfig.getStringList("deduplication.labels"))))
@@ -53,38 +52,32 @@ public class SaymonApp {
         KafkaProducer<String, SomeSinkMessage> producer = new KafkaProducer<>(config.getConfig("kafka.producer").root().unwrapped());
         outputTopic = pipelineConfig.getString("outputTopic");
 
+        executor.scheduleAtFixedRate(() -> {
+                    ConsumerRecords<String, SomeSourceMessage> records = consumer.poll(Duration.ofMillis(pipelineConfig.getLong("consumerTimeoutMs")));
+
+                    log.debug("Got messages. Count: " + records.count());
+
+                    StreamSupport.stream(records.spliterator(), false)
+                            .map(ConsumerRecord::value)
+                            .forEach(service::put);
+                },
+                1000,
+                pipelineConfig.getLong("runPeriodMs"),
+                TimeUnit.MILLISECONDS);
+
+        executor.scheduleAtFixedRate(() -> {
+                    List<SomeSinkMessage> msgs = service.process();
+                    msgs.forEach(msg -> producer.send(new ProducerRecord<>(outputTopic, msg)));
+                    log.info("Processed messages. Count: " + msgs.size());
+                },
+                2000,
+                pipelineConfig.getLong("runPeriodMs"),
+                TimeUnit.MILLISECONDS);
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             executor.shutdown();
             consumer.close();
             producer.close();
         }));
-
-        while (true) {
-            ConsumerRecords<String, SomeSourceMessage> records = consumer.poll(Duration.ofMillis(pipelineConfig.getLong("retrieveIntervalMs")));
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-
-            Iterable<SourceMessage> sms = StreamSupport.stream(records.spliterator(), false)
-                    .map(ConsumerRecord::value)
-                    .collect(Collectors.toList());
-
-            CompletableFuture<Void> future = CompletableFuture
-                    .supplyAsync(() -> service.process(() -> sms), executor)
-                    .thenAccept(sinkMessages -> {
-                        sinkMessages.forEach(sinkMessage -> {
-                            producer.send(
-                                    new ProducerRecord<>(outputTopic, sinkMessage),
-                                    (metadata, exception) -> {
-                                        if (exception != null) {
-                                            exception.printStackTrace();
-                                        } else {
-                                            log.debug("Sent: " + sinkMessage);
-                                        }
-                                    }
-                            );
-                        });
-                    });
-
-            futures.add(future);
-        }
     }
 }

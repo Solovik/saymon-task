@@ -37,9 +37,6 @@ public class SendMsgs {
                 });
 
         List<SomeSourceMessage> msgs = List.of(
-//                new SomeSourceMessage(1000L, Map.of("A", "value1", "B", "80"), 80.0),
-//                new SomeSourceMessage(1200L, Map.of("A", "value1", "B", "40"), 10.0),
-//                new SomeSourceMessage(2500L, Map.of("A", "value1", "B", "60"), 60.0)
                 new SomeSourceMessage(1000L, Map.of("A", "value1", "B", "80"), 80.0),
                 new SomeSourceMessage(1005L, Map.of("A", "value1", "B", "80"), 90.0),
                 new SomeSourceMessage(1010L, Map.of("A", "value1", "B", "40"), 40.0),

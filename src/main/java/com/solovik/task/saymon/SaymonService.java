@@ -21,10 +21,19 @@ import java.util.function.Predicate;
 @Builder
 @Slf4j
 public class SaymonService {
+    private SourceMessageCache cache;
     private WindowDedup deduplicator;
     private Predicate<SourceMessage> filtration;
     private GroupingBuilder groupingBuilder;
     private WindowAggregator windowAggregator;
+
+    public void put(SourceMessage message) {
+        cache.put(message);
+    }
+
+    public List<SomeSinkMessage> process() {
+        return process(cache);
+    }
 
     public List<SomeSinkMessage> process(Source source) {
         return deduplicator.deduplicate(source.source())
